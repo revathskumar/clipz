@@ -94,6 +94,23 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // source:
+    //      https://github.com/ziglang/zig/issues/16733
+    //      https://github.com/ghostty-org/ghostty/blob/6502922bb6bf79e1a03f1cd7c42e2076ac0d5b11/src/build/SharedDeps.zig#L357-L366
+    //
+    // On Linux, we need to add a couple common library paths that aren't
+    // on the standard search list. i.e. GTK is often in /usr/lib/x86_64-linux-gnu
+    // on x86_64.
+    if (exe.rootModuleTarget().os.tag == .linux) {
+        const triple = exe.rootModuleTarget().linuxTriple(b.allocator) catch {
+            return;
+        };
+        const path = b.fmt("/usr/lib/{s}", .{triple});
+        if (std.fs.accessAbsolute(path, .{})) {
+            exe.addLibraryPath(.{ .cwd_relative = path });
+        } else |_| {}
+    }
+
     exe.root_module.addImport("wayland", wayland);
     exe.linkSystemLibrary("wayland-client");
     exe.linkLibC();
