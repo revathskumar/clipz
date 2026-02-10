@@ -2,3 +2,5 @@
 zig-out/
 tmp/*
 !tmp/.gitkeep
+.env*
+!.env.example
