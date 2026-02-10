@@ -8,6 +8,10 @@ const zwlr = wayland.client.zwlr;
 
 const log = std.log.scoped(.clipz);
 
+const Commands = enum {
+    print,
+};
+
 const Context = struct {
     running: bool,
     display: *wl.Display,
@@ -31,20 +35,13 @@ pub fn main() anyerror!void {
     defer history.deinit(ally);
 
     var args = std.process.args();
-    var command: []const u8 = "";
+    var command: Commands = .print;
 
     while (args.next()) |arg| {
-        std.debug.print("{s}\n", .{arg});
         if (std.mem.orderZ(u8, arg, "print") == .eq) {
-            command = arg;
+            command = .print;
             break;
         }
-    }
-
-    if (std.mem.order(u8, command, "print") == .eq) {
-        std.debug.print("print command : {s}\n", .{command});
-        try clipz.print(ally, &history);
-        posix.exit(0);
     }
 
     var context = Context{
@@ -57,6 +54,14 @@ pub fn main() anyerror!void {
         .history = history,
         .ally = ally,
     };
+
+    switch (command) {
+        .print => {
+            std.debug.print("print command : {}\n", .{command});
+            try clipz.print(ally, &history);
+            posix.exit(0);
+        },
+    }
 
     context.display = try wl.Display.connect(null);
     log.debug("connected to wayland display", .{});
