@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const pkg = @import("build.zig.zon");
 const Scanner = @import("wayland").Scanner;
 
 // Although this function looks imperative, it does not perform the build
@@ -93,6 +94,10 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", pkg.version);
+    exe.root_module.addOptions("build_options", options);
 
     const known_folders = b.dependency("known_folders", .{
         .target = target,

@@ -1,5 +1,6 @@
 const std = @import("std");
 const posix = std.posix;
+const build_options = @import("build_options");
 
 const clipz = @import("clipz");
 const wayland = @import("wayland");
@@ -12,6 +13,7 @@ const Commands = enum {
     daemon,
     help,
     print,
+    version,
 };
 
 const Context = struct {
@@ -50,6 +52,10 @@ pub fn main() anyerror!void {
         }
         if (std.mem.orderZ(u8, arg, "print") == .eq) {
             command = .print;
+            break;
+        }
+        if (std.mem.orderZ(u8, arg, "version") == .eq) {
+            command = .version;
             break;
         }
     }
@@ -111,6 +117,14 @@ pub fn main() anyerror!void {
             std.debug.print("print command : {}\n", .{command});
             try clipz.print(ally, &history);
             posix.exit(0);
+        },
+        .version => {
+            var stdout_buffer: [1024]u8 = undefined;
+            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            const stdout = &stdout_writer.interface;
+
+            try stdout.print("Clipz : v{s} \n", .{build_options.version});
+            try stdout.flush();
         },
     }
 }
