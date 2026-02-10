@@ -9,6 +9,7 @@ const zwlr = wayland.client.zwlr;
 const log = std.log.scoped(.clipz);
 
 const Commands = enum {
+    daemon,
     print,
 };
 
@@ -38,6 +39,10 @@ pub fn main() anyerror!void {
     var command: Commands = .print;
 
     while (args.next()) |arg| {
+        if (std.mem.orderZ(u8, arg, "daemon") == .eq) {
+            command = .daemon;
+            break;
+        }
         if (std.mem.orderZ(u8, arg, "print") == .eq) {
             command = .print;
             break;
@@ -56,33 +61,34 @@ pub fn main() anyerror!void {
     };
 
     switch (command) {
+        .daemon => {
+            context.display = try wl.Display.connect(null);
+            log.debug("connected to wayland display", .{});
+            const display = context.display;
+            const registry = try display.getRegistry();
+
+            registry.setListener(*Context, listener, &context);
+
+            if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+
+            const device = try context.manager.getDataDevice(context.seat);
+            defer device.destroy();
+            device.setListener(*Context, deviceListener, &context);
+
+            if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+
+            while (context.running) {
+                if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
+            }
+
+            // context.display.disconnect();
+        },
         .print => {
             std.debug.print("print command : {}\n", .{command});
             try clipz.print(ally, &history);
             posix.exit(0);
         },
     }
-
-    context.display = try wl.Display.connect(null);
-    log.debug("connected to wayland display", .{});
-    const display = context.display;
-    const registry = try display.getRegistry();
-
-    registry.setListener(*Context, listener, &context);
-
-    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
-
-    const device = try context.manager.getDataDevice(context.seat);
-    defer device.destroy();
-    device.setListener(*Context, deviceListener, &context);
-
-    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
-
-    while (context.running) {
-        if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
-    }
-
-    // context.display.disconnect();
 }
 
 fn deviceListener(device: *zwlr.DataControlDeviceV1, event: zwlr.DataControlDeviceV1.Event, context: *Context) void {
