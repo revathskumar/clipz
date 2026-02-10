@@ -59,6 +59,7 @@ pub fn main() anyerror!void {
     };
 
     context.display = try wl.Display.connect(null);
+    log.debug("connected to wayland display", .{});
     const display = context.display;
     const registry = try display.getRegistry();
 
@@ -160,7 +161,7 @@ fn receive_data(_: *zwlr.DataControlDeviceV1, offer: ?*zwlr.DataControlOfferV1, 
             item_count += 1;
         }
 
-        std.debug.print("history items count : items = {}, bytes = {} \n", .{ item_count, context.history.items.len });
+        log.info("history items count : items = {}, bytes = {} \n", .{ item_count, context.history.items.len });
         try clipz.writeToHistory(context.ally, context.history.items);
 
         try stdout.flush();
