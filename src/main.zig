@@ -68,7 +68,7 @@ pub fn main() anyerror!void {
 
     const device = try context.manager.getDataDevice(context.seat);
     defer device.destroy();
-    device.setListener(*Context, deviceListner, &context);
+    device.setListener(*Context, deviceListener, &context);
 
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
@@ -79,7 +79,7 @@ pub fn main() anyerror!void {
     // context.display.disconnect();
 }
 
-fn deviceListner(device: *zwlr.DataControlDeviceV1, event: zwlr.DataControlDeviceV1.Event, context: *Context) void {
+fn deviceListener(device: *zwlr.DataControlDeviceV1, event: zwlr.DataControlDeviceV1.Event, context: *Context) void {
     switch (event) {
         .data_offer => |offer| {
             offer.id.setListener(*Context, dataControlOfferListener, context);
