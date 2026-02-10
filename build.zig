@@ -94,6 +94,14 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const known_folders = b.dependency("known_folders", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    // const exe = b.addExecutable(...);
+    // This adds the known-folders module to the executable which can then be imported with `@import("known-folders")`
+    mod.addImport("known_folders", known_folders.module("known-folders"));
+
     // source:
     //      https://github.com/ziglang/zig/issues/16733
     //      https://github.com/ghostty-org/ghostty/blob/6502922bb6bf79e1a03f1cd7c42e2076ac0d5b11/src/build/SharedDeps.zig#L357-L366

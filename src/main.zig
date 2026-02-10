@@ -27,7 +27,7 @@ pub fn main() anyerror!void {
     defer ally.free(std.mem.span(mime_type));
 
     var history: std.ArrayList(u8) = .empty;
-    _ = try clipz.readFromHistory(ally, &history);
+    _ = clipz.readFromHistory(ally, &history) catch {};
     defer history.deinit(ally);
 
     var args = std.process.args();

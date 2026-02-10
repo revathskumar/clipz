@@ -1,7 +1,9 @@
 //! By convention, root.zig is the root source file when making a library.
 const std = @import("std");
 
-const file_name = "history.txt";
+const known_folders = @import("known_folders");
+
+const file_name = "clipz_history.txt";
 
 pub fn print(allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
     var stdout_buffer: [1024]u8 = undefined;
@@ -20,7 +22,10 @@ pub fn print(allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
 }
 
 pub fn writeToHistory(allocator: std.mem.Allocator, content: []const u8) !void {
-    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ "tmp", file_name });
+    const cache_path = try known_folders.getPath(allocator, known_folders.KnownFolder.cache) orelse return;
+    defer allocator.free(cache_path);
+
+    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ cache_path, file_name });
     defer allocator.free(full_path);
 
     const file = try std.fs.cwd().createFile(
@@ -33,7 +38,10 @@ pub fn writeToHistory(allocator: std.mem.Allocator, content: []const u8) !void {
 }
 
 pub fn readFromHistory(allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
-    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ "tmp", file_name });
+    const cache_path = try known_folders.getPath(allocator, known_folders.KnownFolder.cache) orelse return;
+    defer allocator.free(cache_path);
+
+    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ cache_path, file_name });
     defer allocator.free(full_path);
 
     var file = try std.fs.cwd().openFile(full_path, .{});
