@@ -10,6 +10,7 @@ const log = std.log.scoped(.clipz);
 
 const Commands = enum {
     daemon,
+    help,
     print,
 };
 
@@ -36,11 +37,15 @@ pub fn main() anyerror!void {
     defer history.deinit(ally);
 
     var args = std.process.args();
-    var command: Commands = .print;
+    var command: Commands = .help;
 
     while (args.next()) |arg| {
         if (std.mem.orderZ(u8, arg, "daemon") == .eq) {
             command = .daemon;
+            break;
+        }
+        if (std.mem.orderZ(u8, arg, "help") == .eq) {
+            command = .help;
             break;
         }
         if (std.mem.orderZ(u8, arg, "print") == .eq) {
@@ -82,6 +87,25 @@ pub fn main() anyerror!void {
             }
 
             // context.display.disconnect();
+        },
+        .help => {
+            const help_text =
+                \\Clipz : Clipboard selection history
+                \\
+                \\Commands:
+                \\
+                \\  daemon  run the clipz daemon
+                \\  help    show help message
+                \\  print   print the selection history
+                \\
+            ;
+
+            var stdout_buffer: [1024]u8 = undefined;
+            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            const stdout = &stdout_writer.interface;
+
+            try stdout.print("{s}", .{help_text});
+            try stdout.flush();
         },
         .print => {
             std.debug.print("print command : {}\n", .{command});
