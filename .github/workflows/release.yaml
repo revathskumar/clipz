@@ -1,0 +1,55 @@
+name: Generate Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Select release type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  x86_64-linux-gnu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+      - name: Deps
+        run: |
+          sudo apt update
+          sudo apt install -y wayland-protocols libwayland-client0 pkg-config libwayland-dev
+      - name: Update version in build.zig.zon
+        run: |
+          new_version=$(./version.sh ${{ github.event.inputs.release_type }})
+          # # Commit the change
+          # git config --global user.name "GitHub Actions"
+          # git config --global user.email "actions@github.com"
+          # git add build.zig.zon
+          # git commit -m "Bump version to $new_version"
+          # git tag "v$new_version"
+          echo "new_version=$new_version" >> $GITHUB_ENV
+      # - name: Commit version change
+      #   run: |
+      #     git config --global user.name "GitHub Actions"
+      #     git config --global user.email "actions@github.com"
+      #     git push origin main --tags
+      - name: Build
+        run: |
+          zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseSafe --summary all
+          mv ./zig-out/bin/clipz{,"-x86_64-linux-gnu-$new_version"}
+      - name: Upload dist folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin
+          path: ./zig-out/bin/
+      # - name: Create Release
+      #   run: |
+      #     new_version=$(grep -oP 'version = "\K[^"]+' build.zig.zon)
+      #     gh release create "v$new_version" --title "Release v$new_version" --notes "Automated release for version $new_version" ./zig-out/bin/*
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
