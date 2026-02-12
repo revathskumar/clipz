@@ -134,9 +134,10 @@ pub fn main() anyerror!void {
                 \\
                 \\Commands:
                 \\
-                \\  daemon  run the clipz daemon
-                \\  help    show help message
-                \\  print   print the selection history
+                \\  daemon    run the clipz daemon
+                \\  help      show help message
+                \\  print     print the selection history
+                \\  version   show version number
                 \\
             ;
 
