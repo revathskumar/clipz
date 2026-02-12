@@ -3,7 +3,13 @@ const std = @import("std");
 
 const known_folders = @import("known_folders");
 
-const file_name = "clipz_history.txt";
+fn getCacheFullPath(io: std.Io, environ: *std.process.Environ.Map, allocator: std.mem.Allocator, file_name: ?[]const u8) ![]const u8 {
+    const file = file_name orelse "clipz_history.txt";
+    const cache_path = try known_folders.getPath(io, allocator, environ.*, known_folders.KnownFolder.cache) orelse return "";
+    defer allocator.free(cache_path);
+
+    return try std.fs.path.join(allocator, &[_][]const u8{ cache_path, file });
+}
 
 pub fn print(io: std.Io, allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
     const buf = try allocator.alloc(u8, history.items.len);
@@ -16,10 +22,7 @@ pub fn print(io: std.Io, allocator: std.mem.Allocator, history: *std.ArrayList(u
 }
 
 pub fn writeToHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: std.mem.Allocator, content: []const u8) !void {
-    const cache_path = try known_folders.getPath(io, allocator, environ.*, known_folders.KnownFolder.cache) orelse return;
-    defer allocator.free(cache_path);
-
-    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ cache_path, file_name });
+    const full_path = try getCacheFullPath(io, environ, allocator, null);
     defer allocator.free(full_path);
 
     const dir = std.Io.Dir.cwd();
@@ -38,10 +41,7 @@ pub fn writeToHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: 
 }
 
 pub fn readFromHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
-    const cache_path = try known_folders.getPath(io, allocator, environ.*, known_folders.KnownFolder.cache) orelse return;
-    defer allocator.free(cache_path);
-
-    const full_path = try std.fs.path.join(allocator, &[_][]const u8{ cache_path, file_name });
+    const full_path = try getCacheFullPath(io, environ, allocator, null);
     defer allocator.free(full_path);
 
     const dir = std.Io.Dir.cwd();
