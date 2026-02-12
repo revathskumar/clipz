@@ -21,22 +21,66 @@ const Context = struct {
     display: *wl.Display,
     manager: *zwlr.DataControlManagerV1,
     seat: *wl.Seat,
+    device: *zwlr.DataControlDeviceV1,
+    registry: *wl.Registry,
     offer: ?*zwlr.DataControlOfferV1,
     mime_type: [*:0]const u8,
     history: std.ArrayList(u8),
     ally: std.mem.Allocator,
 };
 
+var ctx = Context{
+    .running = true,
+    .display = undefined,
+    .manager = undefined,
+    .seat = undefined,
+    .device = undefined,
+    .registry = undefined,
+    .offer = null,
+    .mime_type = "",
+    .history = .empty,
+    .ally = undefined,
+};
+
+fn signalHandler(signo: i32) callconv(.c) void {
+    if (signo == std.os.linux.SIG.INT) {
+        teardown();
+        log.info("exiting", .{});
+
+        std.debug.print("SIGINT signal\n", .{});
+        std.process.exit(0);
+    }
+}
+
+fn teardown() void {
+    std.debug.print("teardown called\n", .{});
+
+    ctx.manager.destroy();
+    ctx.seat.destroy();
+    ctx.registry.destroy();
+    ctx.device.destroy();
+
+    ctx.display.disconnect();
+}
+
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) posix.exit(1);
-    var ally = gpa.allocator();
-    const mime_type: [*:0]const u8 = try ally.dupeZ(u8, "text/plain;charset=utf-8");
-    defer ally.free(std.mem.span(mime_type));
+    ctx.ally = gpa.allocator();
+    ctx.mime_type = try ctx.ally.dupeZ(u8, "text/plain;charset=utf-8");
+    defer ctx.ally.free(std.mem.span(ctx.mime_type));
+
+    var sa = std.os.linux.Sigaction{
+        .handler = .{ .handler = signalHandler },
+        .mask = std.os.linux.sigemptyset(),
+        .flags = 0,
+    };
+
+    _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &sa, null);
 
     var history: std.ArrayList(u8) = .empty;
-    _ = clipz.readFromHistory(ally, &history) catch {};
-    defer history.deinit(ally);
+    _ = clipz.readFromHistory(ctx.ally, &history) catch {};
+    defer history.deinit(ctx.ally);
 
     var args = std.process.args();
     var command: Commands = .help;
@@ -60,35 +104,25 @@ pub fn main() anyerror!void {
         }
     }
 
-    var context = Context{
-        .running = true,
-        .display = undefined,
-        .manager = undefined,
-        .seat = undefined,
-        .offer = null,
-        .mime_type = mime_type,
-        .history = history,
-        .ally = ally,
-    };
-
     switch (command) {
         .daemon => {
-            context.display = try wl.Display.connect(null);
+            ctx.display = try wl.Display.connect(null);
             log.debug("connected to wayland display", .{});
-            const display = context.display;
-            const registry = try display.getRegistry();
+            const display = ctx.display;
+            ctx.registry = try display.getRegistry();
+            defer ctx.registry.destroy();
 
-            registry.setListener(*Context, listener, &context);
-
-            if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
-
-            const device = try context.manager.getDataDevice(context.seat);
-            defer device.destroy();
-            device.setListener(*Context, deviceListener, &context);
+            ctx.registry.setListener(*Context, listener, &ctx);
 
             if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
-            while (context.running) {
+            ctx.device = try ctx.manager.getDataDevice(ctx.seat);
+            defer ctx.device.destroy();
+            ctx.device.setListener(*Context, deviceListener, &ctx);
+
+            if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+
+            while (ctx.running) {
                 if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
             }
 
@@ -115,8 +149,8 @@ pub fn main() anyerror!void {
         },
         .print => {
             std.debug.print("print command : {}\n", .{command});
-            try clipz.print(ally, &history);
-            posix.exit(0);
+            try clipz.print(ctx.ally, &history);
+            // posix.exit(0);
         },
         .version => {
             var stdout_buffer: [1024]u8 = undefined;
