@@ -17,6 +17,8 @@ const Commands = enum {
 };
 
 const Context = struct {
+    io: std.Io,
+    environ: *std.process.Environ.Map,
     running: bool,
     display: *wl.Display,
     manager: *zwlr.DataControlManagerV1,
@@ -30,6 +32,8 @@ const Context = struct {
 };
 
 var ctx = Context{
+    .io = undefined,
+    .environ = undefined,
     .running = true,
     .display = undefined,
     .manager = undefined,
@@ -42,7 +46,7 @@ var ctx = Context{
     .ally = undefined,
 };
 
-fn signalHandler(signo: i32) callconv(.c) void {
+fn signalHandler(signo: std.os.linux.SIG) callconv(.c) void {
     if (signo == std.os.linux.SIG.INT) {
         teardown();
         log.info("exiting", .{});
@@ -63,9 +67,12 @@ fn teardown() void {
     ctx.display.disconnect();
 }
 
-pub fn main() anyerror!void {
+pub fn main(init: std.process.Init) anyerror!void {
+    ctx.io = init.io;
+    ctx.environ = init.environ_map;
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer if (gpa.deinit() == .leak) posix.exit(1);
+    defer if (gpa.deinit() == .leak) std.process.exit(1);
     ctx.ally = gpa.allocator();
     ctx.mime_type = try ctx.ally.dupeZ(u8, "text/plain;charset=utf-8");
     defer ctx.ally.free(std.mem.span(ctx.mime_type));
@@ -79,10 +86,11 @@ pub fn main() anyerror!void {
     _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &sa, null);
 
     var history: std.ArrayList(u8) = .empty;
-    _ = clipz.readFromHistory(ctx.ally, &history) catch {};
+    _ = clipz.readFromHistory(init.io, init.environ_map, ctx.ally, &history) catch {};
     defer history.deinit(ctx.ally);
 
-    var args = std.process.args();
+    // var args = std.process.args();
+    var args = init.minimal.args.iterate();
     var command: Commands = .help;
 
     while (args.next()) |arg| {
@@ -141,25 +149,27 @@ pub fn main() anyerror!void {
                 \\
             ;
 
-            var stdout_buffer: [1024]u8 = undefined;
-            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-            const stdout = &stdout_writer.interface;
-
-            try stdout.print("{s}", .{help_text});
-            try stdout.flush();
+            const stdout: std.Io.File = .stdout();
+            try stdout.writeStreamingAll(init.io, help_text);
         },
         .print => {
             std.debug.print("print command : {}\n", .{command});
-            try clipz.print(ctx.ally, &history);
+            try clipz.print(init.io, ctx.ally, &history);
             // posix.exit(0);
         },
         .version => {
-            var stdout_buffer: [1024]u8 = undefined;
-            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-            const stdout = &stdout_writer.interface;
+            // var stdout_buffer: [1024]u8 = undefined;
+            // // var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            // var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+            // const stdout = &stdout_writer.interface;
 
-            try stdout.print("Clipz : v{s} \n", .{build_options.version});
-            try stdout.flush();
+            // try stdout.print("Clipz : v{s} \n", .{build_options.version});
+            // try stdout.flush();
+            const version_text = try std.fmt.allocPrint(ctx.ally, "Clipz : v{s} \n", .{build_options.version});
+            defer ctx.ally.free(version_text);
+
+            const stdout: std.Io.File = .stdout();
+            try stdout.writeStreamingAll(init.io, version_text);
         },
     }
 }
@@ -224,15 +234,17 @@ fn receive_data(_: *zwlr.DataControlDeviceV1, offer: ?*zwlr.DataControlOfferV1, 
     var buf: [4068]u8 = undefined;
 
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    // var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(context.io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
 
-    const pipe_fds = try posix.pipe();
-    defer posix.close(pipe_fds[0]);
+    var pipe_fds: [2]i32 = undefined;
+    _ = std.os.linux.pipe(&pipe_fds);
+    defer _ = std.os.linux.close(pipe_fds[0]);
 
     offer.?.receive(std.mem.span(context.mime_type), pipe_fds[1]);
     _ = context.display.flush();
-    posix.close(pipe_fds[1]);
+    _ = std.os.linux.close(pipe_fds[1]);
 
     const ret = readMessage(pipe_fds[0], &buf);
 
@@ -246,7 +258,7 @@ fn receive_data(_: *zwlr.DataControlDeviceV1, offer: ?*zwlr.DataControlOfferV1, 
         }
 
         log.info("history items count : items = {}, bytes = {} \n", .{ item_count, context.history.items.len });
-        try clipz.writeToHistory(context.ally, context.history.items);
+        try clipz.writeToHistory(context.io, context.environ, context.ally, context.history.items);
 
         try stdout.flush();
     }

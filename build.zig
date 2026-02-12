@@ -82,6 +82,8 @@ pub fn build(b: *std.Build) void {
             // definition if desireable (e.g. firmware for embedded devices).
             .target = target,
             .optimize = optimize,
+            .valgrind = true,
+            .link_libc = true,
             // List of modules available for import in source files part of the
             // root module.
             .imports = &.{
@@ -119,14 +121,18 @@ pub fn build(b: *std.Build) void {
             return;
         };
         const path = b.fmt("/usr/lib/{s}", .{triple});
-        if (std.fs.accessAbsolute(path, .{})) {
-            exe.addLibraryPath(.{ .cwd_relative = path });
+
+        // const out_file = try std.Io.Dir.createFileAbsolute(init.io, out_path, .{});
+        if (std.Io.Dir.accessAbsolute(b.graph.io, path, .{})) {
+            // if (std.fs.accessAbsolute(path, .{})) {
+            exe.root_module.addLibraryPath(.{ .cwd_relative = path });
         } else |_| {}
     }
 
     exe.root_module.addImport("wayland", wayland);
-    exe.linkSystemLibrary("wayland-client");
-    exe.linkLibC();
+    // exe.linkSystemLibrary("wayland-client");
+    exe.root_module.linkSystemLibrary("wayland-client", .{});
+    // exe.linkLibC();
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
