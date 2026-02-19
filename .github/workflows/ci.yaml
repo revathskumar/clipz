@@ -11,11 +11,13 @@ jobs:
   x86_64-linux-gnu:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v2
+      - uses: https://github.com/actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: https://github.com/mlugg/setup-zig@v2
       - name: Deps
         run: |
-          sudo apt update
-          sudo apt install -y wayland-protocols libwayland-client0 pkg-config libwayland-dev
+          apt update
+          apt install -y wayland-protocols libwayland-client0 pkg-config libwayland-dev
       - name: Build
-        run:  zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseSafe --summary all
+        run: zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseSafe --summary all
