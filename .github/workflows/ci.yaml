@@ -3,15 +3,13 @@ name: ci
 on:
   pull_request:
   push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
   x86_64-linux-gnu:
     runs-on: ubuntu-latest
     steps:
-      - uses: https://github.com/actions/checkout@v4
+      - uses: https://github.com/actions/checkout@v6
         with:
           persist-credentials: false
       - uses: https://github.com/mlugg/setup-zig@v2
