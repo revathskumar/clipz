@@ -12,17 +12,25 @@ fn getCacheFullPath(io: std.Io, environ: *std.process.Environ.Map, allocator: st
 }
 
 pub fn print(io: std.Io, allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
+    var stdout_buffer: [4096]u8 = undefined;
+
     const buf = try allocator.alloc(u8, history.items.len);
     defer allocator.free(buf);
 
-    const stdout: std.Io.File = .stdout();
+    var stdout_file_writer: std.Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
+    const stdout_writer = &stdout_file_writer.interface;
+
     _ = std.mem.replace(u8, history.items, "\u{0}", "\n", buf);
 
-    try stdout.writeStreamingAll(io, buf);
+    try stdout_writer.print("{s}", .{buf});
+    try stdout_writer.flush();
 }
 
 pub fn writeToHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: std.mem.Allocator, content: []const u8) !void {
     const full_path = try getCacheFullPath(io, environ, allocator, null);
+
+    // std.debug.print("writeToHistory full_path : {s}\n", .{full_path});
+    // std.debug.print("writeToHistory content : {s}\n", .{content});
     defer allocator.free(full_path);
 
     const dir = std.Io.Dir.cwd();
@@ -32,16 +40,19 @@ pub fn writeToHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: 
         .{ .read = true, .truncate = true },
     );
     defer file.close(io);
-    var buffer: [1024]u8 = undefined;
+    var buffer: [4096]u8 = undefined;
 
     var f_writer = file.writer(io, &buffer);
     const writer = &f_writer.interface;
 
-    try writer.writeAll(content);
+    try writer.print("{s}", .{content});
+    try writer.flush();
 }
 
 pub fn readFromHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
     const full_path = try getCacheFullPath(io, environ, allocator, null);
+
+    std.debug.print("readFromHistory full_path : {s}\n", .{full_path});
     defer allocator.free(full_path);
 
     const dir = std.Io.Dir.cwd();

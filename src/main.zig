@@ -59,6 +59,7 @@ fn signalHandler(signo: std.os.linux.SIG) callconv(.c) void {
 fn teardown() void {
     std.debug.print("teardown called\n", .{});
 
+    ctx.history.deinit(ctx.ally);
     ctx.manager.destroy();
     ctx.seat.destroy();
     ctx.registry.destroy();
@@ -71,9 +72,7 @@ pub fn main(init: std.process.Init) anyerror!void {
     ctx.io = init.io;
     ctx.environ = init.environ_map;
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer if (gpa.deinit() == .leak) std.process.exit(1);
-    ctx.ally = gpa.allocator();
+    ctx.ally = init.gpa;
     ctx.mime_type = try ctx.ally.dupeZ(u8, "text/plain;charset=utf-8");
     defer ctx.ally.free(std.mem.span(ctx.mime_type));
 
@@ -84,10 +83,6 @@ pub fn main(init: std.process.Init) anyerror!void {
     };
 
     _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &sa, null);
-
-    var history: std.ArrayList(u8) = .empty;
-    _ = clipz.readFromHistory(init.io, init.environ_map, ctx.ally, &history) catch {};
-    defer history.deinit(ctx.ally);
 
     // var args = std.process.args();
     var args = init.minimal.args.iterate();
@@ -113,6 +108,22 @@ pub fn main(init: std.process.Init) anyerror!void {
     }
 
     switch (command) {
+        .daemon, .print => {
+            log.debug("about to read history file", .{});
+            _ = try clipz.readFromHistory(init.io, init.environ_map, ctx.ally, &ctx.history);
+
+            var it = std.mem.tokenizeAny(u8, ctx.history.items, "\u{0}");
+
+            var item_count: u32 = 0;
+            while (it.next()) |_| {
+                item_count += 1;
+            }
+            log.info("history items count : items = {} , bytes = {} \n", .{ item_count, ctx.history.items.len });
+        },
+        else => {},
+    }
+
+    switch (command) {
         .daemon => {
             ctx.display = try wl.Display.connect(null);
             log.debug("connected to wayland display", .{});
@@ -133,8 +144,6 @@ pub fn main(init: std.process.Init) anyerror!void {
             while (ctx.running) {
                 if (display.dispatch() != .SUCCESS) return error.DispatchFailed;
             }
-
-            // context.display.disconnect();
         },
         .help => {
             const help_text =
@@ -151,25 +160,21 @@ pub fn main(init: std.process.Init) anyerror!void {
 
             const stdout: std.Io.File = .stdout();
             try stdout.writeStreamingAll(init.io, help_text);
+            std.process.exit(0);
         },
         .print => {
             std.debug.print("print command : {}\n", .{command});
-            try clipz.print(init.io, ctx.ally, &history);
-            // posix.exit(0);
+            try clipz.print(init.io, ctx.ally, &ctx.history);
+            std.process.exit(0);
         },
         .version => {
-            // var stdout_buffer: [1024]u8 = undefined;
-            // // var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-            // var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
-            // const stdout = &stdout_writer.interface;
+            var stdout_buffer: [32]u8 = undefined;
+            var stdout_writer: std.Io.File.Writer = .init(.stdout(), init.io, &stdout_buffer);
+            const stdout = &stdout_writer.interface;
 
-            // try stdout.print("Clipz : v{s} \n", .{build_options.version});
-            // try stdout.flush();
-            const version_text = try std.fmt.allocPrint(ctx.ally, "Clipz : v{s} \n", .{build_options.version});
-            defer ctx.ally.free(version_text);
-
-            const stdout: std.Io.File = .stdout();
-            try stdout.writeStreamingAll(init.io, version_text);
+            try stdout.print("Clipz : v{s} \n", .{build_options.version});
+            try stdout.flush();
+            std.process.exit(0);
         },
     }
 }
@@ -190,7 +195,7 @@ fn deviceListener(device: *zwlr.DataControlDeviceV1, event: zwlr.DataControlDevi
         },
         .primary_selection => |primary_selection| {
             if (context.offer != null and context.offer == primary_selection.id) {
-                receive_data(device, primary_selection.id, context) catch {};
+                // receive_data(device, primary_selection.id, context) catch {};
                 context.offer = null;
             }
         },
@@ -230,13 +235,27 @@ fn readMessage(socket: posix.socket_t, buf: []u8) []const u8 {
     }
 }
 
+fn replaceNewlines(ret: []const u8, buf: []u8) []const u8 {
+    var i: usize = 0;
+    for (ret) |byte| {
+        if (byte == '\n' or byte == '\r') {
+            // buf[i] = 0xA0;
+            // buf[i] = '\u{00A0}';
+            buf[i] = 0xC2;
+
+            i += 1;
+            buf[i] = 0xA0;
+        } else {
+            buf[i] = byte;
+        }
+        i += 1;
+    }
+    return buf[0..i];
+}
+
 fn receive_data(_: *zwlr.DataControlDeviceV1, offer: ?*zwlr.DataControlOfferV1, context: *Context) !void {
     var buf: [4068]u8 = undefined;
-
-    var stdout_buffer: [1024]u8 = undefined;
-    // var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    var stdout_writer = std.Io.File.stdout().writer(context.io, &stdout_buffer);
-    const stdout = &stdout_writer.interface;
+    var ret_buf: [4068]u8 = undefined;
 
     var pipe_fds: [2]i32 = undefined;
     _ = std.os.linux.pipe(&pipe_fds);
@@ -246,7 +265,8 @@ fn receive_data(_: *zwlr.DataControlDeviceV1, offer: ?*zwlr.DataControlOfferV1, 
     _ = context.display.flush();
     _ = std.os.linux.close(pipe_fds[1]);
 
-    const ret = readMessage(pipe_fds[0], &buf);
+    const msg = readMessage(pipe_fds[0], &buf);
+    const ret = replaceNewlines(msg, &ret_buf);
 
     if (ret.len > 0) {
         try context.history.insert(context.ally, 0, 0);
@@ -257,10 +277,8 @@ fn receive_data(_: *zwlr.DataControlDeviceV1, offer: ?*zwlr.DataControlOfferV1, 
             item_count += 1;
         }
 
-        log.info("history items count : items = {}, bytes = {} \n", .{ item_count, context.history.items.len });
+        log.info("receive_data history items count : items = {}, bytes = {} \n", .{ item_count, context.history.items.len });
         try clipz.writeToHistory(context.io, context.environ, context.ally, context.history.items);
-
-        try stdout.flush();
     }
 
     offer.?.destroy();

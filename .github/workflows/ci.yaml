@@ -14,10 +14,8 @@ jobs:
           persist-credentials: false
       - uses: https://github.com/mlugg/setup-zig@v2.2.1
         with:
-          # version: master
-          version: 0.16.0-dev.2736+3b515fbed
-          # version: 0.16.0-dev.2565+684032671
-          # mirror: https://ziglang.freetls.fastly.net
+          version: 0.16.0
+          mirror: https://ziglang.freetls.fastly.net
       - name: Deps
         run: |
           apt update
