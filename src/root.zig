@@ -3,6 +3,8 @@ const std = @import("std");
 
 const known_folders = @import("known_folders");
 
+const log = std.log.scoped(.clipz);
+
 fn getCacheFullPath(io: std.Io, environ: *std.process.Environ.Map, allocator: std.mem.Allocator, file_name: ?[]const u8) ![]const u8 {
     const file = file_name orelse "clipz_history.txt";
     const cache_path = try known_folders.getPath(io, allocator, environ.*, known_folders.KnownFolder.cache) orelse return "";
@@ -52,11 +54,25 @@ pub fn writeToHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: 
 pub fn readFromHistory(io: std.Io, environ: *std.process.Environ.Map, allocator: std.mem.Allocator, history: *std.ArrayList(u8)) !void {
     const full_path = try getCacheFullPath(io, environ, allocator, null);
 
-    std.debug.print("readFromHistory full_path : {s}\n", .{full_path});
+    log.debug("readFromHistory full_path : {s}", .{full_path});
     defer allocator.free(full_path);
 
     const dir = std.Io.Dir.cwd();
-    const file = try dir.openFile(io, full_path, .{});
+    const file = blk: {
+        break :blk dir.openFile(io, full_path, .{}) catch |err|
+            switch (err) {
+                error.FileNotFound => {
+                    log.debug("File '{s}' Not found. creating new", .{full_path});
+                    break :blk try dir.createFile(
+                        io,
+                        full_path,
+                        .{ .read = true },
+                    );
+                },
+                else => return err,
+            };
+    };
+
     defer file.close(io);
 
     const file_len = (try file.stat(io)).size;
